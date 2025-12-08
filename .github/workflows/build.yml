@@ -1,0 +1,112 @@
+name: Build Multi-Platform Binaries
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            output-name: dart-ast-merge-linux
+            artifact-name: linux
+          - os: macos-latest
+            output-name: dart-ast-merge-macos
+            artifact-name: macos
+          - os: windows-latest
+            output-name: dart-ast-merge.exe
+            artifact-name: windows
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Run tests (if any)
+        run: dart analyze
+        continue-on-error: true
+
+      - name: Build executable
+        run: dart compile exe bin/main.dart -o ${{ matrix.output-name }}
+
+      - name: Test executable
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            ./${{ matrix.output-name }} --help
+          else
+            chmod +x ${{ matrix.output-name }}
+            ./${{ matrix.output-name }} --help
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart-ast-merge-${{ matrix.artifact-name }}
+          path: ${{ matrix.output-name }}
+          retention-days: 90
+
+  create-release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/dart-ast-merge-linux/dart-ast-merge-linux
+            artifacts/dart-ast-merge-macos/dart-ast-merge-macos
+            artifacts/dart-ast-merge-windows/dart-ast-merge.exe
+          body: |
+            ## Dart AST Smart Merge CLI - Release ${{ github.ref_name }}
+            
+            ### 📦 Downloads
+            
+            Escolha o binário para seu sistema operacional:
+            
+            - **macOS**: `dart-ast-merge-macos`
+            - **Linux**: `dart-ast-merge-linux`
+            - **Windows**: `dart-ast-merge.exe`
+            
+            ### 🚀 Como Usar
+            
+            ```bash
+            # macOS/Linux
+            chmod +x dart-ast-merge-*
+            ./dart-ast-merge-macos --help
+            
+            # Windows
+            dart-ast-merge.exe --help
+            ```
+            
+            ### 📚 Documentação
+            
+            Veja [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) para instruções completas.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

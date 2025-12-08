@@ -1,18 +1,8 @@
-# Files and directories created by pub
+# Dart
 .dart_tool/
 .packages
 build/
 pubspec.lock
-
-# Conventional directory for build outputs
-dist/
-
-# Omit committing pubspec.lock for library packages:
-# https://dart.dev/guides/libraries/private-files#pubspeclock
-pubspec.lock
-
-# Directory created by dartdoc
-doc/api/
 
 # IDE
 .idea/
@@ -22,10 +12,14 @@ doc/api/
 # Mac
 .DS_Store
 
-# Compiled executables
-dart-merge
-*.exe
+# Executáveis (não commitar os binários grandes)
+dart-ast-merge
+dist/
 
 # Test outputs
 example/merged_output.dart
+example/test_output.dart
+example/*_merged.dart
 
+# Docker
+Dockerfile.build
