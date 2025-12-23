@@ -523,20 +523,27 @@ class SourceMerger {
         if (p1Methods.containsKey(methodName)) {
           final p1Method = p1Methods[methodName]!;
           
-          // Strategy: Detect if there was a real change in the method signature
-          // 1. If signatures are identical → Use P1 (user's customization wins)
-          // 2. If signatures differ → Use P2 (API was updated, must follow new contract)
+          // Strategy: Intelligent merge based on signature AND body changes
+          // 1. If signature changed → Use P2 (API was updated)
+          // 2. If signature is same BUT body changed → Use P2 (new structural changes like added widgets)
+          // 3. If both signature and body are identical → Use P1 (preserve user customizations)
           
           final hasSignatureChange = _hasMethodSignatureChanged(p1Method, member);
+          final hasBodyChange = _hasMethodBodyChanged(p1Method, member);
           
           if (hasSignatureChange) {
-            // SCENARIO 2: Method signature changed in P2 (API update)
+            // SCENARIO 1: Method signature changed in P2 (API update)
             // Use P2 to stay compatible with new API
             buffer.writeln(_indent(_nodeToSource(member)));
             stdout.writeln('   ⚠️  Method "$methodName" signature changed - using P2 (generated)');
+          } else if (hasBodyChange) {
+            // SCENARIO 2: Signature is same but body changed (structural updates like new widgets)
+            // Use P2 to incorporate new structural elements
+            buffer.writeln(_indent(_nodeToSource(member)));
+            stdout.writeln('   📝  Method "$methodName" body changed - using P2 (generated)');
           } else {
-            // SCENARIO 1: Same signature in P1 and P2
-            // Use P1 to preserve user customizations
+            // SCENARIO 3: Both signature and body are identical
+            // Use P1 to preserve user customizations (though they're the same)
             buffer.writeln(_indent(_nodeToSource(p1Method)));
             methodsReplaced++;
           }
@@ -622,6 +629,16 @@ class SourceMerger {
     
     // Same signature
     return false;
+  }
+  
+  /// Check if method body has changed between P1 and P2
+  /// Returns true if the implementation differs
+  bool _hasMethodBodyChanged(MethodDeclaration p1Method, MethodDeclaration p2Method) {
+    // Compare the body/implementation
+    final p1Body = p1Method.body.toSource().trim();
+    final p2Body = p2Method.body.toSource().trim();
+    
+    return p1Body != p2Body;
   }
 
   String _nodeToSource(AstNode node) {

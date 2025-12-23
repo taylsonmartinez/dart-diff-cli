@@ -29,7 +29,7 @@ class GestorService {
     });
   }
 
-  Future<Response> getById(num id) async {
+  Future<Response> getById(num id, num teste) async {
     final url = _formatUrl(GestorApi.getById, {'id': id});
     return _dio.get(url);
   }
