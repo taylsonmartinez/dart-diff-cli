@@ -252,14 +252,11 @@ class P1EntityCollector extends RecursiveAstVisitor<void> {
   }
 
   /// Creates a unique signature for a method
+  /// Note: Dart doesn't support method overloading, so we use only the method name
+  /// as the key to ensure P1 always wins when there's a name conflict
   String _createMethodSignature(MethodDeclaration node) {
-    final name = node.name.lexeme;
-    final params = node.parameters?.parameters
-        .map((p) => p is SimpleFormalParameter 
-            ? '${p.type}:${p.name}' 
-            : p.toString())
-        .join(',') ?? '';
-    return '$name($params)';
+    // Use only the method name (not parameters) because Dart doesn't support overloading
+    return node.name.lexeme;
   }
   
   /// Get members for a specific class
@@ -300,13 +297,8 @@ class P2EntityCollector extends RecursiveAstVisitor<void> {
   }
 
   String _createMethodSignature(MethodDeclaration node) {
-    final name = node.name.lexeme;
-    final params = node.parameters?.parameters
-        .map((p) => p is SimpleFormalParameter 
-            ? '${p.type}:${p.name}' 
-            : p.toString())
-        .join(',') ?? '';
-    return '$name($params)';
+    // Use only the method name (not parameters) because Dart doesn't support overloading
+    return node.name.lexeme;
   }
 }
 
@@ -527,13 +519,30 @@ class SourceMerger {
           buffer.writeln(_indent(_nodeToSource(member)));
         }
       } else if (member is MethodDeclaration) {
-        final signature = _createMethodSignature(member);
-        if (p1Methods.containsKey(signature)) {
-          // Use P1 version
-          buffer.writeln(_indent(_nodeToSource(p1Methods[signature]!)));
-          handledP1Methods.add(signature);
-          methodsReplaced++;
+        final methodName = member.name.lexeme;
+        if (p1Methods.containsKey(methodName)) {
+          final p1Method = p1Methods[methodName]!;
+          
+          // Strategy: Detect if there was a real change in the method signature
+          // 1. If signatures are identical → Use P1 (user's customization wins)
+          // 2. If signatures differ → Use P2 (API was updated, must follow new contract)
+          
+          final hasSignatureChange = _hasMethodSignatureChanged(p1Method, member);
+          
+          if (hasSignatureChange) {
+            // SCENARIO 2: Method signature changed in P2 (API update)
+            // Use P2 to stay compatible with new API
+            buffer.writeln(_indent(_nodeToSource(member)));
+            stdout.writeln('   ⚠️  Method "$methodName" signature changed - using P2 (generated)');
+          } else {
+            // SCENARIO 1: Same signature in P1 and P2
+            // Use P1 to preserve user customizations
+            buffer.writeln(_indent(_nodeToSource(p1Method)));
+            methodsReplaced++;
+          }
+          handledP1Methods.add(methodName);
         } else {
+          // Method only exists in P2 - add it
           buffer.writeln(_indent(_nodeToSource(member)));
         }
       } else if (member is ConstructorDeclaration) {
@@ -580,13 +589,39 @@ class SourceMerger {
   }
 
   String _createMethodSignature(MethodDeclaration node) {
-    final name = node.name.lexeme;
-    final params = node.parameters?.parameters
-        .map((p) => p is SimpleFormalParameter 
-            ? '${p.type}:${p.name}' 
-            : p.toString())
-        .join(',') ?? '';
-    return '$name($params)';
+    // Use only the method name (not parameters) because Dart doesn't support overloading
+    return node.name.lexeme;
+  }
+  
+  /// Get list of parameter names from a method
+  List<String> _getMethodParameters(MethodDeclaration node) {
+    if (node.parameters == null) return [];
+    return node.parameters!.parameters
+        .map((p) => p.name?.lexeme ?? '')
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+  
+  /// Check if method signature has changed between P1 and P2
+  /// Returns true if there are differences in parameters (count or names)
+  bool _hasMethodSignatureChanged(MethodDeclaration p1Method, MethodDeclaration p2Method) {
+    final p1Params = _getMethodParameters(p1Method);
+    final p2Params = _getMethodParameters(p2Method);
+    
+    // Different number of parameters = signature changed
+    if (p1Params.length != p2Params.length) {
+      return true;
+    }
+    
+    // Different parameter names = signature changed
+    for (var i = 0; i < p1Params.length; i++) {
+      if (p1Params[i] != p2Params[i]) {
+        return true;
+      }
+    }
+    
+    // Same signature
+    return false;
   }
 
   String _nodeToSource(AstNode node) {
