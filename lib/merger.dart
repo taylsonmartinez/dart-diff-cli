@@ -556,10 +556,23 @@ class SourceMerger {
         final constructorName = member.name?.lexeme ?? '';
         final signature = 'constructor:$constructorName';
         if (p1Constructors.containsKey(signature)) {
-          // Use P1 version
-          buffer.writeln(_indent(_nodeToSource(p1Constructors[signature]!)));
+          final p1Constructor = p1Constructors[signature]!;
+          
+          // Check if constructor signature changed (new/removed parameters)
+          final hasSignatureChange = _hasConstructorSignatureChanged(p1Constructor, member);
+          
+          if (hasSignatureChange) {
+            // SCENARIO: Constructor signature changed (new fields added)
+            // Use P2 to stay compatible with new structure
+            buffer.writeln(_indent(_nodeToSource(member)));
+            stdout.writeln('   ⚠️  Constructor signature changed - using P2 (generated)');
+          } else {
+            // SCENARIO: Same signature
+            // Use P1 to preserve user customizations
+            buffer.writeln(_indent(_nodeToSource(p1Constructor)));
+            constructorsReplaced++;
+          }
           handledP1Constructors.add(signature);
-          constructorsReplaced++;
         } else {
           buffer.writeln(_indent(_nodeToSource(member)));
         }
@@ -609,6 +622,14 @@ class SourceMerger {
         .toList();
   }
   
+  /// Get list of parameter names from a constructor
+  List<String> _getConstructorParameters(ConstructorDeclaration node) {
+    return node.parameters.parameters
+        .map((p) => p.name?.lexeme ?? '')
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+  
   /// Check if method signature has changed between P1 and P2
   /// Returns true if there are differences in parameters (count or names)
   bool _hasMethodSignatureChanged(MethodDeclaration p1Method, MethodDeclaration p2Method) {
@@ -639,6 +660,28 @@ class SourceMerger {
     final p2Body = p2Method.body.toSource().trim();
     
     return p1Body != p2Body;
+  }
+  
+  /// Check if constructor signature has changed between P1 and P2
+  /// Returns true if parameters changed (added/removed/renamed)
+  bool _hasConstructorSignatureChanged(ConstructorDeclaration p1Constructor, ConstructorDeclaration p2Constructor) {
+    final p1Params = _getConstructorParameters(p1Constructor);
+    final p2Params = _getConstructorParameters(p2Constructor);
+    
+    // Different parameter count = signature changed
+    if (p1Params.length != p2Params.length) {
+      return true;
+    }
+    
+    // Different parameter names = signature changed
+    for (var i = 0; i < p1Params.length; i++) {
+      if (p1Params[i] != p2Params[i]) {
+        return true;
+      }
+    }
+    
+    // Same signature
+    return false;
   }
 
   String _nodeToSource(AstNode node) {

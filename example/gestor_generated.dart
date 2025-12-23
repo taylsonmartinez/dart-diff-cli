@@ -32,6 +32,10 @@ class Gestor {
     this.updatedDate,
     this.assignedTo,
     this.tags,
+    this.sobrenome,
+    this.endereco,
+    this.cidade,
+    this.estado
   });
 
   int? id;
