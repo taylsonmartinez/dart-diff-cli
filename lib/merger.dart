@@ -38,8 +38,12 @@ class DartAstMerger {
 
     stdout.writeln('📊 Collected from P1 (User Modified):');
     stdout.writeln('   - ${p1Collector.imports.length} imports');
-    stdout.writeln('   - ${p1Collector.fields.length} fields');
-    stdout.writeln('   - ${p1Collector.methods.length} methods');
+    stdout.writeln('   - ${p1Collector.topLevelFunctions.length} top-level functions');
+    stdout.writeln('   - ${p1Collector.topLevelVariables.length} top-level variables');
+    stdout.writeln('   - ${p1Collector.topLevelEnums.length} enums');
+    stdout.writeln('   - ${p1Collector.topLevelExtensions.length} extensions');
+    stdout.writeln('   - ${p1Collector.fields.length} class fields');
+    stdout.writeln('   - ${p1Collector.methods.length} class methods');
     stdout.writeln('   - ${p1Collector.constructors.length} constructors');
 
     // Phase 3: Merge P1 entities into P2
@@ -104,6 +108,12 @@ class P1EntityCollector extends RecursiveAstVisitor<void> {
   // Map of import URIs to their directive nodes
   final Map<String, ImportDirective> imports = {};
   
+  // Top-level declarations (functions, variables, enums, etc.)
+  final Map<String, FunctionDeclaration> topLevelFunctions = {};
+  final Map<String, TopLevelVariableDeclaration> topLevelVariables = {};
+  final Map<String, EnumDeclaration> topLevelEnums = {};
+  final Map<String, ExtensionDeclaration> topLevelExtensions = {};
+  
   // Map of class name to its members
   final Map<String, Map<String, FieldDeclaration>> fieldsByClass = {};
   final Map<String, Map<String, MethodDeclaration>> methodsByClass = {};
@@ -147,6 +157,42 @@ class P1EntityCollector extends RecursiveAstVisitor<void> {
       imports[uri] = node;
     }
     super.visitImportDirective(node);
+  }
+  
+  @override
+  void visitFunctionDeclaration(FunctionDeclaration node) {
+    // Only collect top-level functions (not methods inside classes)
+    if (_currentClassName == null) {
+      final functionName = node.name.lexeme;
+      topLevelFunctions[functionName] = node;
+    }
+    super.visitFunctionDeclaration(node);
+  }
+  
+  @override
+  void visitTopLevelVariableDeclaration(TopLevelVariableDeclaration node) {
+    for (final variable in node.variables.variables) {
+      topLevelVariables[variable.name.lexeme] = node;
+    }
+    super.visitTopLevelVariableDeclaration(node);
+  }
+  
+  @override
+  void visitEnumDeclaration(EnumDeclaration node) {
+    // Only collect top-level enums (should always be top-level anyway)
+    if (_currentClassName == null) {
+      topLevelEnums[node.name.lexeme] = node;
+    }
+    super.visitEnumDeclaration(node);
+  }
+  
+  @override
+  void visitExtensionDeclaration(ExtensionDeclaration node) {
+    if (_currentClassName == null) {
+      final extensionName = node.name?.lexeme ?? node.extendedType.toString();
+      topLevelExtensions[extensionName] = node;
+    }
+    super.visitExtensionDeclaration(node);
   }
   
   @override
@@ -305,13 +351,85 @@ class SourceMerger {
       }
     }
     
-    // Step 3: Merge class declarations and other declarations
+    // Step 3: Merge top-level declarations (functions, variables, enums, extensions, classes)
+    final handledP1TopLevel = <String>{};
+    
     for (final declaration in p2Unit.declarations) {
-      if (declaration is ClassDeclaration) {
+      if (declaration is FunctionDeclaration) {
+        final functionName = declaration.name.lexeme;
+        if (p1Entities.topLevelFunctions.containsKey(functionName)) {
+          // Use P1 version
+          buffer.writeln(_nodeToSource(p1Entities.topLevelFunctions[functionName]!));
+          handledP1TopLevel.add('function:$functionName');
+          newMembersAdded++;
+        } else {
+          buffer.writeln(_nodeToSource(declaration));
+        }
+      } else if (declaration is TopLevelVariableDeclaration) {
+        // Check if any variable in this declaration exists in P1
+        bool replaced = false;
+        for (final variable in declaration.variables.variables) {
+          final varName = variable.name.lexeme;
+          if (p1Entities.topLevelVariables.containsKey(varName)) {
+            buffer.writeln(_nodeToSource(p1Entities.topLevelVariables[varName]!));
+            handledP1TopLevel.add('variable:$varName');
+            replaced = true;
+            break;
+          }
+        }
+        if (!replaced) {
+          buffer.writeln(_nodeToSource(declaration));
+        }
+      } else if (declaration is EnumDeclaration) {
+        final enumName = declaration.name.lexeme;
+        if (p1Entities.topLevelEnums.containsKey(enumName)) {
+          buffer.writeln(_nodeToSource(p1Entities.topLevelEnums[enumName]!));
+          handledP1TopLevel.add('enum:$enumName');
+        } else {
+          buffer.writeln(_nodeToSource(declaration));
+        }
+      } else if (declaration is ExtensionDeclaration) {
+        final extensionName = declaration.name?.lexeme ?? declaration.extendedType.toString();
+        if (p1Entities.topLevelExtensions.containsKey(extensionName)) {
+          buffer.writeln(_nodeToSource(p1Entities.topLevelExtensions[extensionName]!));
+          handledP1TopLevel.add('extension:$extensionName');
+        } else {
+          buffer.writeln(_nodeToSource(declaration));
+        }
+      } else if (declaration is ClassDeclaration) {
         buffer.writeln(_mergeClassDeclaration(declaration, p2Collector));
       } else {
-        // Other top-level declarations (functions, variables, etc.)
+        // Other declarations (mixin, typedef, etc.)
         buffer.writeln(_nodeToSource(declaration));
+      }
+    }
+    
+    // Add P1-only top-level declarations that don't exist in P2
+    for (final entry in p1Entities.topLevelFunctions.entries) {
+      if (!handledP1TopLevel.contains('function:${entry.key}')) {
+        buffer.writeln(_nodeToSource(entry.value));
+        newMembersAdded++;
+      }
+    }
+    
+    for (final entry in p1Entities.topLevelVariables.entries) {
+      if (!handledP1TopLevel.contains('variable:${entry.key}')) {
+        buffer.writeln(_nodeToSource(entry.value));
+        newMembersAdded++;
+      }
+    }
+    
+    for (final entry in p1Entities.topLevelEnums.entries) {
+      if (!handledP1TopLevel.contains('enum:${entry.key}')) {
+        buffer.writeln(_nodeToSource(entry.value));
+        newMembersAdded++;
+      }
+    }
+    
+    for (final entry in p1Entities.topLevelExtensions.entries) {
+      if (!handledP1TopLevel.contains('extension:${entry.key}')) {
+        buffer.writeln(_nodeToSource(entry.value));
+        newMembersAdded++;
       }
     }
     
