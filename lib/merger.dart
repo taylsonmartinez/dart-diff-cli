@@ -383,7 +383,19 @@ class SourceMerger {
       } else if (declaration is ExtensionDeclaration) {
         final extensionName = declaration.name?.lexeme ?? declaration.extendedType.toString();
         if (p1Entities.topLevelExtensions.containsKey(extensionName)) {
-          buffer.writeln(_nodeToSource(p1Entities.topLevelExtensions[extensionName]!));
+          final p1Extension = p1Entities.topLevelExtensions[extensionName]!;
+          
+          // Check if extension body has changed (new getters, methods, etc.)
+          if (_hasExtensionBodyChanged(p1Extension, declaration)) {
+            // SCENARIO: Extension body changed (e.g., new fields in getter)
+            // Use P2 to incorporate new extension members
+            buffer.writeln(_nodeToSource(declaration));
+            stdout.writeln('   📝  Extension "$extensionName" body changed - using P2 (generated)');
+          } else {
+            // SCENARIO: Same extension implementation
+            // Use P1 to preserve user customizations
+            buffer.writeln(_nodeToSource(p1Extension));
+          }
           handledP1TopLevel.add('extension:$extensionName');
         } else {
           buffer.writeln(_nodeToSource(declaration));
@@ -700,6 +712,16 @@ class SourceMerger {
     // Compare the body/implementation
     final p1Body = p1Constructor.body.toSource().trim();
     final p2Body = p2Constructor.body.toSource().trim();
+    
+    return p1Body != p2Body;
+  }
+  
+  /// Check if extension body has changed between P1 and P2
+  /// Returns true if the implementation differs (e.g., new getters, methods, fields in extension)
+  bool _hasExtensionBodyChanged(ExtensionDeclaration p1Extension, ExtensionDeclaration p2Extension) {
+    // Compare the full body/implementation
+    final p1Body = p1Extension.toSource().trim();
+    final p2Body = p2Extension.toSource().trim();
     
     return p1Body != p2Body;
   }

@@ -81,11 +81,12 @@ enum TaskTypeTaylson {
 
 extension GestorRecord on Gestor {
   ({
-   int? id,
-      String nome,
-  })
-  get destructure => (
-    id: id,
-      nome: nome,
-  );
+    int? id,
+    String nome,
+    String? sobrenome,
+    DateTime? nascimento,
+    String? createdDate,
+    String? updatedDate
+  }) get destructure =>
+      (id: id, nome: nome, sobrenome: sobrenome, nascimento: nascimento, createdDate: createdDate, updatedDate: updatedDate);
 }
