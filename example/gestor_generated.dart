@@ -55,13 +55,20 @@ class Gestor {
 
   factory Gestor.fromJson(Map<String, dynamic> json) => Gestor(
     id: (json['id'] ?? '') as int?,
-            nome: (json['nome'] ?? '') as String,
+    nome: (json['nome'] ?? '') as String,
+    sobrenome: (json['sobrenome'] ?? '') as String?,
+    nascimento: (json['nascimento'] ?? '') as DateTime?,
+    createdDate: (json['createdDate'] ?? '') as String?,
+    updatedDate: (json['updatedDate'] ?? '') as String?,
   );
 
   Map<String, dynamic> toJson() => {
     'id': id,
-        'nome': nome,
-        
+    'nome': nome,
+    'sobrenome': sobrenome,
+    'nascimento': nascimento != null
+        ? DateFormat('dd/MM/yyyy').format(nascimento!)
+        : null,
   };
 
 }

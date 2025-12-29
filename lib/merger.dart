@@ -561,13 +561,23 @@ class SourceMerger {
           // Check if constructor signature changed (new/removed parameters)
           final hasSignatureChange = _hasConstructorSignatureChanged(p1Constructor, member);
           
+          // For factory constructors, also check if body changed (e.g., new fields in fromJson)
+          final hasBodyChange = (p1Constructor.factoryKeyword != null && member.factoryKeyword != null)
+              ? _hasConstructorBodyChanged(p1Constructor, member)
+              : false;
+          
           if (hasSignatureChange) {
             // SCENARIO: Constructor signature changed (new fields added)
             // Use P2 to stay compatible with new structure
             buffer.writeln(_indent(_nodeToSource(member)));
             stdout.writeln('   ⚠️  Constructor signature changed - using P2 (generated)');
+          } else if (hasBodyChange) {
+            // SCENARIO: Factory body changed (e.g., new fields in fromJson)
+            // Use P2 to incorporate new parsing logic
+            buffer.writeln(_indent(_nodeToSource(member)));
+            stdout.writeln('   📝  Factory "$constructorName" body changed - using P2 (generated)');
           } else {
-            // SCENARIO: Same signature
+            // SCENARIO: Same signature and body
             // Use P1 to preserve user customizations
             buffer.writeln(_indent(_nodeToSource(p1Constructor)));
             constructorsReplaced++;
@@ -682,6 +692,16 @@ class SourceMerger {
     
     // Same signature
     return false;
+  }
+  
+  /// Check if constructor body has changed between P1 and P2
+  /// Useful for factory constructors like fromJson that may parse new fields
+  bool _hasConstructorBodyChanged(ConstructorDeclaration p1Constructor, ConstructorDeclaration p2Constructor) {
+    // Compare the body/implementation
+    final p1Body = p1Constructor.body.toSource().trim();
+    final p2Body = p2Constructor.body.toSource().trim();
+    
+    return p1Body != p2Body;
   }
 
   String _nodeToSource(AstNode node) {
